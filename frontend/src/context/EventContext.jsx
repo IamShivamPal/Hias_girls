@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { API_ENDPOINTS } from '../api/config';
+import { API_ENDPOINTS, API_BASE_URL } from '../api/config';
 
 const EventContext = createContext();
 
@@ -46,7 +46,7 @@ export function EventProvider({ children }) {
 
   const triggerOverride = async (reason) => {
     try {
-      const res = await fetch(`${API_ENDPOINTS.API_BASE_URL}/manual/override`, {
+      const res = await fetch(`${API_BASE_URL}/manual/override`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason })
@@ -76,8 +76,17 @@ export function EventProvider({ children }) {
     }
   };
 
+  const clearLogs = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/events/clear`, { method: 'POST' });
+      setEvents([]);
+    } catch (err) {
+      console.error("Failed to clear logs", err);
+    }
+  };
+
   return (
-    <EventContext.Provider value={{ events, connected, triggerOverride, triggerSimulation }}>
+    <EventContext.Provider value={{ events, connected, triggerOverride, triggerSimulation, clearLogs }}>
       {children}
     </EventContext.Provider>
   );

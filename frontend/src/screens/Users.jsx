@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users as UsersIcon, Search, UserPlus, MoreVertical, Shield, User } from 'lucide-react';
+import { Users as UsersIcon, Search, UserPlus, Shield, User, RefreshCw, Trash2 } from 'lucide-react';
 import { API_ENDPOINTS } from '../api/config';
 
 export default function Users({ initialSearch = '' }) {
@@ -8,6 +8,7 @@ export default function Users({ initialSearch = '' }) {
   const [showModal, setShowModal] = useState(false);
   const [newUser, setNewUser] = useState({ user_id: '', name: '' });
   const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const fetchUsers = async (query = '') => {
     setLoading(true);
@@ -28,6 +29,26 @@ export default function Users({ initialSearch = '' }) {
     setSearchQuery(initialSearch);
   }, [initialSearch]);
 
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`${API_ENDPOINTS.USERS}/sync-from-device`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Successfully synced ${data.synced} new users from device!`);
+        fetchUsers();
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'Failed to sync users');
+      }
+    } catch (err) {
+      alert('Failed to sync users');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,6 +68,21 @@ export default function Users({ initialSearch = '' }) {
       }
     } catch (err) {
       alert("Failed to enroll user");
+    }
+  };
+
+  const handleDelete = async (user_id, name) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}" (${user_id})? This will also remove them from the COSEC device.`)) return;
+    try {
+      const res = await fetch(`${API_ENDPOINTS.USERS}/${user_id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchUsers(searchQuery);
+      } else {
+        const err = await res.json();
+        alert(err.detail || 'Failed to delete user');
+      }
+    } catch (err) {
+      alert('Failed to delete user');
     }
   };
 
@@ -108,6 +144,25 @@ export default function Users({ initialSearch = '' }) {
               style={{ width: '100%', backgroundColor: '#0a0c14', border: '1px solid #1e293b', padding: '10px 10px 10px 40px', borderRadius: '8px', color: 'white', fontSize: '14px' }}
             />
           </div>
+          <button 
+            onClick={handleSync}
+            disabled={isSyncing}
+            style={{ 
+              backgroundColor: '#1e293b', 
+              color: 'white', 
+              border: 'none', 
+              padding: '10px 20px', 
+              borderRadius: '8px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              fontWeight: '600',
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              opacity: isSyncing ? 0.7 : 1
+            }}
+          >
+            <RefreshCw size={18} /> {isSyncing ? 'Syncing...' : 'Sync from Device'}
+          </button>
           <button 
             onClick={() => setShowModal(true)}
             style={{ 
@@ -183,8 +238,14 @@ export default function Users({ initialSearch = '' }) {
                     </div>
                   </td>
                   <td style={{ padding: '16px', textAlign: 'right' }}>
-                    <button style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
-                      <MoreVertical size={18} />
+                    <button
+                      onClick={() => handleDelete(user.user_id, user.name)}
+                      title="Delete user"
+                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '6px', borderRadius: '6px', transition: 'color 0.2s' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </td>
                 </tr>

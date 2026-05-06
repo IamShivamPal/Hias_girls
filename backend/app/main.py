@@ -8,10 +8,11 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.adapters.cosec import COSECAdapter
 
 from app.schemas import (
-    AccessInput, ControllerEvent, Decision, Reason, Direction, Method, ReviewAction
+    AccessInput, ControllerEvent, Decision, Reason, Direction, Method, ReviewAction, UserResponse
 )
 from app.engine import evaluate, seed_db
 from app.hardware import open_gate, GPIO_ENABLED
@@ -36,7 +37,7 @@ app.add_middleware(
 # --- Global State ---
 SSE_CLIENTS: List[asyncio.Queue] = []
 DUPLICATE_CACHE = {}  # (user_id, device_id) -> timestamp
-DUPLICATE_THRESHOLD = 0.1
+DUPLICATE_THRESHOLD = 2.0 # Ignore identical scans within 2 seconds
 REVIEW_QUEUE = {}  # trace_id -> ControllerEvent
 
 # Default Settings (will be overridden by DB if exists)
@@ -78,7 +79,7 @@ async def broadcast_event(event: ControllerEvent):
     for queue in SSE_CLIENTS:
         await queue.put(data)
 
-def process_access_request(db: Session, user_id: str, method: Method, device_id: str, bypass_cache: bool = False) -> Optional[ControllerEvent]:
+async def process_access_request(db: Session, user_id: str, method: Method, device_id: str, ip_address: str = None, bypass_cache: bool = False) -> Optional[ControllerEvent]:
     """Core logic for processing access requests from any source."""
     # 1. Duplicate Prevention
     if not bypass_cache:
@@ -103,12 +104,31 @@ def process_access_request(db: Session, user_id: str, method: Method, device_id:
         method=method,
         decision=decision,
         reason=reason,
-        device_id=device_id
+        device_id=device_id,
+        ip_address=ip_address
     )
 
-    # 5. Trigger Hardware if ALLOWed
+    # 4. Handle Review Queue for Unknowns
+    if decision == Decision.DENY and reason == Reason.UNKNOWN:
+        # Only add to queue if the 'admin_review' setting is enabled
+        if SYSTEM_SETTINGS.get("admin_review", True):
+            REVIEW_QUEUE[event.trace_id] = event
+            print(f"[REVIEW_REQUIRED] Unknown face (ID: {user_id}) at {device_id}. Trace: {event.trace_id}")
+        else:
+            print(f"[ACCESS_DENIED] Auto-denying stranger (Review Queue Disabled)")
+
+    # 5. Trigger Hardware feedback
     if decision == Decision.ALLOW:
         open_gate(event.trace_id, event.user_id, device_id)
+    elif decision == Decision.DENY and reason == Reason.UNKNOWN:
+        # Trigger a clear audio alert on the hardware
+        from app.background import COSEC_CONFIG
+        hw_adapter = COSECAdapter(
+            COSEC_CONFIG["base_url"],
+            COSEC_CONFIG["username"],
+            COSEC_CONFIG["password"]
+        )
+        asyncio.create_task(hw_adapter.trigger_buzzer())
 
     # 6. Save to DB
     db_event = Event(
@@ -125,6 +145,23 @@ def process_access_request(db: Session, user_id: str, method: Method, device_id:
     db.add(db_event)
     db.commit()
 
+    # 7. Save to Shadow Logger (JSON File - Only store latest)
+    try:
+        import json
+        log_entry = {
+            "timestamp": event.timestamp,
+            "name": event.name,
+            "decision": event.decision,
+            "Door": f"{event.device_id} ({event.ip_address or 'Unknown'})",
+            "method": event.method
+        }
+        # Overwrite file with ONLY the latest entry
+        with open("history.json", "w") as f:
+            json.dump([log_entry], f, indent=4)
+    except Exception as e:
+        print(f"[SHADOW_LOG_ERROR] {e}")
+
+    await broadcast_event(event)
     return event
 
 @app.get("/health")
@@ -132,12 +169,18 @@ async def health_check():
     return {"status": "healthy", "service": "hias-controller"}
 
 @app.post("/access/event", response_model=ControllerEvent)
-async def access_event(payload: AccessInput, db: Session = Depends(get_db)):
-    event = process_access_request(db, payload.user_id, payload.method, payload.device_id)
+async def access_event(payload: AccessInput, request: Request, db: Session = Depends(get_db)):
+    event = await process_access_request(db, payload.user_id, payload.method, payload.device_id, ip_address=request.client.host)
     if not event:
         raise HTTPException(status_code=429, detail="Duplicate scan ignored")
     await broadcast_event(event)
     return event
+
+@app.post("/events/clear")
+async def clear_events(db: Session = Depends(get_db)):
+    db.query(Event).delete()
+    db.commit()
+    return {"status": "success"}
 
 @app.get("/events")
 async def get_events(limit: int = 10, db: Session = Depends(get_db)):
@@ -184,15 +227,25 @@ async def event_stream(request: Request):
 @app.post("/manual/override", response_model=ControllerEvent)
 async def manual_override(payload: dict, db: Session = Depends(get_db)):
     reason_text = payload.get("reason", "No reason provided")
-    # Use bypass_cache=True for manual overrides
-    event = process_access_request(db, "S100", Method.MANUAL, "manual_console_01", bypass_cache=True)
+    
+    # Force an override event with the new MANUAL reason
+    event = await process_access_request(db, "S100", Method.MANUAL, "cosec_manual_in", ip_address="127.0.0.1", bypass_cache=True)
     if event:
-        event.reason = reason_text
-        # Update the reason in DB too
+        # Override the decision and name
+        event.decision = Decision.ALLOW
+        event.reason = Reason.MANUAL # Use the enum value to avoid crashes
+        
+        # Update DB with the custom reason text in the name field for visibility
         db_event = db.query(Event).filter(Event.trace_id == event.trace_id).first()
         if db_event:
-            db_event.reason = reason_text
+            db_event.decision = Decision.ALLOW
+            db_event.reason = Reason.MANUAL
+            db_event.name = f"MANUAL: {reason_text}"
             db.commit()
+        
+        # Note: process_access_request ALREADY called open_gate, 
+        # so we don't call it again here to avoid double-pulses.
+        
         await broadcast_event(event)
     return event
 
@@ -213,15 +266,128 @@ async def update_settings(new_settings: dict, db: Session = Depends(get_db)):
     db.commit()
     return SYSTEM_SETTINGS
 
+@app.post("/users/sync-all")
+async def sync_all_devices(db: Session = Depends(get_db)):
+    """
+    Phase 1 — Profile Sync Only:
+      Push every user's profile (name, ID, ref-ID, face-enabled flag) to all
+      secondary gates. This ensures the gates know the users exist and 
+      enables 'enable-fr=1'.
+      
+      Enrollment is now handled manually per-gate via the enrollment page.
+    """
+    from app.background import COSEC_CONFIG
+
+    # Auto-assign Reference IDs to users who don't have them
+    unassigned = db.query(User).filter(User.device_ref_id == None).all()
+    if unassigned:
+        # Find the current max ref id
+        max_ref = db.query(func.max(User.device_ref_id)).scalar() or 100
+        for i, user in enumerate(unassigned):
+            user.device_ref_id = max_ref + i + 1
+        db.commit()
+        
+    users = db.query(User).filter(
+        User.user_id.isnot(None),
+        User.device_ref_id.isnot(None)
+    ).all()
+
+    all_devs = COSEC_CONFIG["devices"]
+
+    results = {
+        "total_users": len(users),
+        "profiles_synced": 0,
+        "errors": [],
+    }
+
+    for user in users:
+        profile_ok = True
+
+        for dev_cfg in all_devs:
+            adapter = COSECAdapter(
+                dev_cfg["url"],
+                COSEC_CONFIG["username"],
+                COSEC_CONFIG["password"]
+            )
+            dev_name = dev_cfg["name"]
+
+            try:
+                # ── Phase 1: push user profile ──────────────────────────────
+                # Check if user already exists to avoid overwriting/wiping templates
+                exists_check = await adapter._get("users", {"action": "get", "user-id": user.user_id})
+                if "Response-Code=0" in exists_check or "response-code=0" in exists_check:
+                    print(f"[SYNC] Skipping Gate {i+1} for {user.user_id} - Profile already exists.")
+                    continue
+
+                # Only push if they don't exist
+                ok = await adapter.upsert_user(
+                    user.user_id, user.name, user.device_ref_id
+                )
+                if not ok:
+                    results["errors"].append(
+                        f"{dev_name}: profile push failed for {user.name}"
+                    )
+                    profile_ok = False
+                    continue
+
+                print(f"[SYNC] Profile pushed: {user.name} → {dev_name}")
+
+            except Exception as e:
+                results["errors"].append(f"{dev_name}/{user.name}: {e}")
+                profile_ok = False
+
+        if profile_ok:
+            results["profiles_synced"] += 1
+
+    return results
+
+@app.get("/system/time")
+async def get_system_time():
+    from datetime import datetime
+    return {"iso": datetime.now().isoformat()}
+
+@app.get("/system/status")
+async def get_system_status():
+    """Provides a simplified health status for the sidebar widget."""
+    import time
+    global COSEC_WORKER
+    
+    cosec_online = COSEC_WORKER and COSEC_WORKER.running
+    
+    return {
+        "controller": "Online",
+        "face_devices": "Online" if cosec_online else "Offline",
+        "rfid_readers": "Healthy",
+        "relays": "Healthy" if GPIO_ENABLED else "Simulated",
+        "network": "Online",
+        "power": "Normal"
+    }
+
 @app.get("/system/devices")
 async def get_system_devices():
-    return [
-        {"name": "HIAS Controller Core", "status": "Healthy", "uptime": "99.98%", "latency": "2ms", "type": "software"},
-        {"name": "PostgreSQL Database", "status": "Healthy", "uptime": "100%", "latency": "5ms", "type": "software"},
-        {"name": "Face Recognition Node", "status": "Healthy", "uptime": "99.95%", "latency": "156ms", "type": "hardware"},
-        {"name": "RFID Reader Grid", "status": "Healthy", "uptime": "99.99%", "latency": "8ms", "type": "hardware"},
-        {"name": "Relay Control Unit", "status": "Healthy" if GPIO_ENABLED else "Simulated", "uptime": "99.90%", "latency": "1ms", "type": "hardware"}
+    from app.background import COSEC_CONFIG
+    global COSEC_WORKER
+    
+    cosec_online = COSEC_WORKER and COSEC_WORKER.running
+    cosec_latency = "42ms" if cosec_online else "0ms"
+
+    devices = [
+        {"name": "HIAS Controller Core", "status": "Online", "uptime": "99.98%", "latency": "1ms", "type": "software", "url": "http://localhost:8000"},
+        {"name": "SQLite Database", "status": "Online", "uptime": "100%", "latency": "0ms", "type": "software", "url": "sqlite:///hias.db"},
     ]
+
+    # Add the actual hardware gates from config
+    for dev in COSEC_CONFIG["devices"]:
+        devices.append({
+            "name": dev["name"],
+            "status": "Online" if cosec_online else "Offline",
+            "uptime": "99.95%",
+            "latency": cosec_latency,
+            "type": "hardware",
+            "url": dev["url"]
+        })
+
+    return devices
 
 @app.get("/review/queue")
 async def get_review_queue():
@@ -327,11 +493,6 @@ async def get_alerts(db: Session = Depends(get_db)):
                 "severity": "Medium",
                 "timestamp": event.timestamp.isoformat()
             })
-    if not GPIO_ENABLED:
-        alerts.append({
-            "id": "h-001", "type": "Hardware", "message": "GPIO Not Detected: Simulated Mode",
-            "severity": "Low", "timestamp": datetime.now().isoformat()
-        })
     return sorted(alerts, key=lambda x: x["timestamp"], reverse=True)
 
 @app.post("/alerts/clear")
@@ -341,10 +502,9 @@ async def clear_alerts(db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success"}
 
-@app.get("/users")
+@app.get("/users", response_model=List[UserResponse])
 async def get_all_users(db: Session = Depends(get_db)):
-    db_users = db.query(User).all()
-    return [{"user_id": u.user_id, "name": u.name, "role": u.role} for u in db_users]
+    return db.query(User).all()
 
 @app.post("/users")
 async def enroll_user(user: dict, db: Session = Depends(get_db)):
@@ -355,37 +515,199 @@ async def enroll_user(user: dict, db: Session = Depends(get_db)):
     if db.query(User).filter(User.user_id == user_id).first():
         raise HTTPException(status_code=400, detail="User ID already exists")
 
-    # Get next device_ref_id based on max existing
+    # Get next device_ref_id by checking both DB and Hardware
     from sqlalchemy import func
-    max_ref = db.query(func.max(User.device_ref_id)).scalar() or 25
-    ref_id = max_ref + 1
+    db_max = db.query(func.max(User.device_ref_id)).scalar() or 0
+    
+    # We'll use the adapter to find the true next free ID on the hardware (Primary Gate)
+    from app.background import COSEC_CONFIG
+    master_dev = COSEC_CONFIG["devices"][0]
+    adapter = COSECAdapter(
+        master_dev["url"],
+        COSEC_CONFIG["username"],
+        COSEC_CONFIG["password"]
+    )
+    
+    # To be safe, we start from the max of (DB+1, 26) 
+    # but we will check the hardware for actual occupancy
+    hw_users = await adapter.fetch_all_users()
+    used_hw_refs = {u['ref_id'] for u in hw_users}
+    
+    ref_id = max(db_max + 1, 26)
+    while ref_id in used_hw_refs:
+        ref_id += 1
+
+    print(f"[DEBUG] Selected ref_id={ref_id} for user_id={user_id}")
 
     # Save to DB
     db_user = User(user_id=user_id, name=name, device_ref_id=ref_id)
     db.add(db_user)
     db.commit()
 
-    # Sync to COSEC device
+    # Sync to ALL COSEC devices in the network
     from app.background import COSEC_CONFIG
-    adapter = COSECAdapter(
-        COSEC_CONFIG["base_url"],
-        COSEC_CONFIG["username"],
-        COSEC_CONFIG["password"]
-    )
-    synced = await adapter.sync_user_to_device(user_id, name, ref_id)
+    all_devs = COSEC_CONFIG["devices"]
+    
+    sync_errors = []
+    for dev_cfg in all_devs:
+        adapter = COSECAdapter(
+            dev_cfg["url"],
+            COSEC_CONFIG["username"],
+            COSEC_CONFIG["password"]
+        )
+        # Using upsert_user which we've already optimized for GET and safety
+        synced = await adapter.upsert_user(user_id, name, ref_id)
+        if not synced:
+            sync_errors.append(dev_cfg['name'])
+
+    if len(sync_errors) == len(all_devs):
+        # If hardware sync fails on ALL devices, we ROLL BACK the DB transaction
+        db.delete(db_user)
+        db.commit()
+        raise HTTPException(
+            status_code=500, 
+            detail="Hardware sync failed on all devices. Please check connections."
+        )
 
     return {
         "status": "success",
         "user_id": user_id,
         "device_ref_id": ref_id,
-        "device_synced": synced
+        "device_synced": True
     }
+
+@app.post("/users/sync-from-device")
+async def sync_from_device(db: Session = Depends(get_db)):
+    from app.background import COSEC_CONFIG
+    master_dev = COSEC_CONFIG["devices"][0]
+    adapter = COSECAdapter(
+        master_dev["url"],
+        COSEC_CONFIG["username"],
+        COSEC_CONFIG["password"]
+    )
+    device_users = await adapter.fetch_all_users()
+    
+    synced_count = 0
+    for u in device_users:
+        existing = db.query(User).filter(User.user_id == u["user_id"]).first()
+        if not existing:
+            new_user = User(user_id=u["user_id"], name=u["name"], device_ref_id=u.get("ref_id", 0))
+            db.add(new_user)
+            synced_count += 1
+        else:
+            existing.name = u["name"]
+            existing.device_ref_id = u.get("ref_id", existing.device_ref_id)
+            
+    db.commit()
+    return {"status": "success", "synced": synced_count}
+
+
+@app.delete("/users/{user_id}")
+async def delete_user(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 1. Remove from ALL Hardware Gates
+    from app.background import COSEC_CONFIG
+    hw_errors = 0
+    for device_cfg in COSEC_CONFIG["devices"]:
+        try:
+            adapter = COSECAdapter(
+                device_cfg["url"],
+                COSEC_CONFIG["username"],
+                COSEC_CONFIG["password"]
+            )
+            await adapter.delete_user(user.user_id)
+        except Exception as e:
+            print(f"[WARNING] Failed to delete user {user_id} from {device_cfg['name']}: {e}")
+            hw_errors += 1
+    
+    hw_success = (hw_errors == 0)
+    
+    if not hw_success:
+        print(f"[WARNING] Hardware deletion failed for {user_id}. Proceeding with DB cleanup.")
+
+    # 2. Remove from local DB (Always do this to prevent getting stuck)
+    db.delete(user)
+    db.commit()
+
+    return {
+        "status": "success", 
+        "user_id": user_id, 
+        "hardware_synced": hw_success
+    }
+
+@app.post("/users/{user_id}/enroll-face")
+async def enroll_user_face(user_id: str, gate_idx: int = 0, db: Session = Depends(get_db)):
+    """Triggers face enrollment mode on a specific gate."""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    from app.background import COSEC_CONFIG
+    if gate_idx < 0 or gate_idx >= len(COSEC_CONFIG["devices"]):
+        raise HTTPException(status_code=400, detail="Invalid gate index")
+        
+    target_dev = COSEC_CONFIG["devices"][gate_idx]
+    adapter = COSECAdapter(
+        target_dev["url"],
+        COSEC_CONFIG["username"],
+        COSEC_CONFIG["password"]
+    )
+    
+    print(f"[ENROLL] Triggering gate {target_dev['name']} for user {user_id}")
+    success = await adapter.enroll_user_face(user_id)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger enrollment on {target_dev['name']}")
+
+    return {"status": "success", "message": f"Enrollment started for {user_id} on {target_dev['name']}"}
+
+@app.post("/users/{user_id}/enroll-complete")
+async def complete_user_enrollment(user_id: str, db: Session = Depends(get_db)):
+    """Manually marks a user as fully enrolled to remove them from the queue."""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.face_enrolled = True
+    db.commit()
+    return {"status": "success", "message": f"User {user_id} marked as fully enrolled"}
 
 @app.get("/users/search")
 async def search_users(q: str = "", db: Session = Depends(get_db)):
     q = f"%{q}%"
     db_users = db.query(User).filter((User.user_id.ilike(q)) | (User.name.ilike(q))).limit(10).all()
     return [{"user_id": u.user_id, "name": u.name, "role": u.role} for u in db_users]
+
+@app.post("/system/force-delete-hw")
+async def force_delete_hw(payload: dict):
+    ref_id = payload.get("ref_id")
+    if not ref_id:
+        raise HTTPException(status_code=400, detail="ref_id is required")
+        
+    # Try BOTH the string ID and the numeric ID if they differ
+    ids_to_try = [str(ref_id)]
+    
+    from app.background import COSEC_CONFIG
+    results = {"total": len(COSEC_CONFIG["devices"]), "success": 0, "errors": []}
+    
+    for device_cfg in COSEC_CONFIG["devices"]:
+        try:
+            adapter = COSECAdapter(
+                device_cfg["url"],
+                COSEC_CONFIG["username"],
+                COSEC_CONFIG["password"]
+            )
+            # Try to delete using the primary ID provided
+            for id_val in ids_to_try:
+                await adapter.delete_user(id_val)
+            results["success"] += 1
+        except Exception as e:
+            results["errors"].append(f"{device_cfg['name']}: {str(e)}")
+            
+    return results
 
 @app.get("/stats/summary")
 async def get_stats_summary(db: Session = Depends(get_db)):

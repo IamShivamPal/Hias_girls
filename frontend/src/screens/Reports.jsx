@@ -18,7 +18,10 @@ export default function Reports() {
         setLoading(false);
       }
     };
+    
     fetchStats();
+    const interval = setInterval(fetchStats, 10000); // Auto-refresh every 10 seconds
+    return () => clearInterval(interval);
   }, []);
 
   const handleExport = () => {

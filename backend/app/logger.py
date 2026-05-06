@@ -14,8 +14,8 @@ def log_event(event: dict) -> None:
     """
     try:
         requests.post(LOGS_SERVICE_URL, json=event, timeout=2)
-    except Exception as e:
-        print(f"[EVENT_LOG_FAIL] Could not send event to Truth Layer: {e}")
+    except Exception:
+        pass
     
     print(f"[EVENT_LOG] trace_id={event.get('trace_id')} | "
           f"decision={event.get('decision')} | "
@@ -34,6 +34,7 @@ def log_relay(trace_id: str, user_id: str) -> None:
     }
     try:
         requests.post(LOGS_SERVICE_URL, json=relay_entry, timeout=2)
-    except Exception as e:
-        print(f"[RELAY_LOG_FAIL] Could not send relay to Truth Layer: {e}")
+    except Exception:
+        # Silently fail or log a tiny message if Truth Layer is down
+        print(f"[LOG] Truth Layer offline (Port 8001)")
 

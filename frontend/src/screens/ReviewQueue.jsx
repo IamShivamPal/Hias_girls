@@ -44,10 +44,6 @@ export default function ReviewQueue({ onSearchUser }) {
     }
   };
 
-  const simulateEvent = async () => {
-    await fetch(API_ENDPOINTS.SIMULATE_REVIEW, { method: 'POST' });
-    fetchQueue();
-  };
 
 
   useEffect(() => {
@@ -76,18 +72,10 @@ export default function ReviewQueue({ onSearchUser }) {
           </h1>
           <p style={{ color: '#94a3b8', fontSize: '14px' }}>Human-in-the-loop verification required</p>
         </div>
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-          <button 
-            onClick={simulateEvent}
-            style={{ backgroundColor: '#1e293b', border: 'none', color: '#64748b', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}
-          >
-            [DEV] PUSH TO QUEUE
-          </button>
           <div style={{ textAlign: 'right' }}>
             <span style={{ fontSize: '32px', fontWeight: 'bold' }}>{items.length}</span>
             <p style={{ color: '#94a3b8', fontSize: '12px' }}>PENDING</p>
           </div>
-        </div>
       </div>
 
 

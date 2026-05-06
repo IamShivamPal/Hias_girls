@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, Integer, Boolean, Enum as SQLEnum
 from sqlalchemy.sql import func
 from .database import Base
 from .schemas import Direction, Method, Decision, Reason
@@ -9,7 +9,8 @@ class User(Base):
     user_id = Column(String, primary_key=True, index=True)
     name = Column(String)
     role = Column(String, default="Resident")
-    device_ref_id = Column(Integer, nullable=True)
+    device_ref_id = Column(Integer, unique=True, nullable=True)
+    face_enrolled = Column(Boolean, default=False)
 
 class Event(Base):
     __tablename__ = "events"

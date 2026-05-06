@@ -1,12 +1,37 @@
-import { CheckCircle2, XCircle, Wifi, Database, Activity, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle2, XCircle, Wifi, Database, Activity, ShieldCheck, Zap } from 'lucide-react';
 
 export default function StatusPanel({ connected }) {
+  const [data, setData] = useState({
+    controller: connected ? 'Online' : 'Offline',
+    face_devices: 'Checking...',
+    rfid_readers: 'Healthy',
+    relays: 'Online',
+    network: 'Online',
+    power: 'Normal'
+  });
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('http://127.0.0.1:8000/system/status');
+        const json = await res.json();
+        setData(json);
+      } catch (err) {
+        setData(prev => ({ ...prev, controller: 'Offline' }));
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, [connected]);
+
   const statuses = [
-    { name: 'Controller', status: connected ? 'Online' : 'Offline', icon: Activity },
-    { name: 'Face Devices', status: '4 / 4 Online', icon: ShieldCheck },
-    { name: 'RFID Readers', status: '2 / 2 Online', icon: Database },
-    { name: 'Relay / Door Locks', status: 'All OK', icon: CheckCircle2 },
-    { name: 'Network', status: 'Online', icon: Wifi },
+    { name: 'Face Devices', status: data.face_devices, icon: ShieldCheck },
+    { name: 'RFID Readers', status: data.rfid_readers, icon: Database },
+    { name: 'Network', status: data.network, icon: Wifi },
+    { name: 'Power Supply', status: data.power, icon: Zap },
   ];
 
   return (
@@ -22,8 +47,8 @@ export default function StatusPanel({ connected }) {
               <span>{s.name}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: s.status === 'Offline' ? '#ef4444' : '#fff' }}>{s.status}</span>
-              <div className={`status-indicator ${s.status === 'Offline' ? 'offline' : 'online'}`} />
+              <span style={{ color: (s.status === 'Offline' || s.status === 'Critical') ? '#ef4444' : '#fff' }}>{s.status}</span>
+              <div className={`status-indicator ${(s.status === 'Offline' || s.status === 'Critical') ? 'offline' : 'online'}`} />
             </div>
           </div>
         ))}

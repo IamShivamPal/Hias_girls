@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+backend/venv/
+.env
+
+# Node
+node_modules/
+dist/
+.DS_Store
+
+# HIAS specific
+backend/history.json
+backend/scratch/

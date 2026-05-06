@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Lock, ShieldAlert } from 'lucide-react';
+import { API_BASE_URL } from '../api/config';
 
 export default function ManualOverride() {
   const [reason, setReason] = useState("");
@@ -12,7 +13,7 @@ export default function ManualOverride() {
     }
     setLoading(true);
     try {
-      await fetch("http://<PI-IP>:3000/manual/override", {
+      await fetch(`${API_BASE_URL}/manual/override`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"

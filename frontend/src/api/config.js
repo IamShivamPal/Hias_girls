@@ -2,8 +2,14 @@
 // Vite uses 'import.meta.env' for environment variables.
 // On Render, we will set VITE_API_URL to the backend URL.
 
-const RAW_API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-export const API_BASE_URL = RAW_API_URL.endsWith('/') ? RAW_API_URL.slice(0, -1) : RAW_API_URL;
+// Dynamically detect the backend IP based on how the site is accessed
+const getBaseUrl = () => {
+    if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+    const hostname = window.location.hostname;
+    return `http://${hostname}:8000`;
+};
+
+export const API_BASE_URL = getBaseUrl();
 
 export const API_ENDPOINTS = {
     ACCESS_EVENT: `${API_BASE_URL}/access/event`,
@@ -18,6 +24,10 @@ export const API_ENDPOINTS = {
     ALERTS: `${API_BASE_URL}/alerts`,
     USERS: `${API_BASE_URL}/users`,
     USERS_SEARCH: `${API_BASE_URL}/users/search`,
+    USERS_SYNC: `${API_BASE_URL}/users/sync-from-device`,
+    USERS_SYNC_ALL: `${API_BASE_URL}/users/sync-all`,
+    USERS_ENROLL_FACE: (id, gateIdx = 0) => `${API_BASE_URL}/users/${id}/enroll-face?gate_idx=${gateIdx}`,
+    USERS_ENROLL_COMPLETE: (id) => `${API_BASE_URL}/users/${id}/enroll-complete`,
     STATS_SUMMARY: `${API_BASE_URL}/stats/summary`,
     SIMULATE_REVIEW: `${API_BASE_URL}/simulate/review`,
 };

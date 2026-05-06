@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Activity, ArrowUpRight, ArrowDownRight, User, Eye, EyeOff } from 'lucide-react';
+import { Activity, ArrowUpRight, ArrowDownRight, User, Eye, EyeOff, Trash2 } from 'lucide-react';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useEvents } from '../context/EventContext';
 
 export default function LiveMonitor() {
-  const { events } = useEvents();
+  const { events, clearLogs } = useEvents();
   const [autoScroll, setAutoScroll] = useState(true);
+
+  const handleClear = async () => {
+    if (window.confirm("Delete all recent access logs and clear monitor?")) {
+      await clearLogs();
+    }
+  };
 
   return (
     <div style={{ padding: '20px', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -16,25 +22,45 @@ export default function LiveMonitor() {
           </h1>
           <p style={{ color: '#94a3b8', fontSize: '14px' }}>Real-time access tracking</p>
         </div>
-        <button 
-          onClick={() => setAutoScroll(!autoScroll)}
-          style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            backgroundColor: autoScroll ? 'rgba(34, 197, 94, 0.1)' : '#1e293b',
-            color: autoScroll ? '#22c55e' : '#94a3b8',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '20px',
-            cursor: 'pointer',
-            fontSize: '12px',
-            fontWeight: '600'
-          }}
-        >
-          {autoScroll ? <Eye size={16} /> : <EyeOff size={16} />}
-          {autoScroll ? 'AUTO-SCROLL ON' : 'AUTO-SCROLL OFF'}
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button 
+            onClick={handleClear}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: '#ef4444',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600'
+            }}
+          >
+            <Trash2 size={16} /> CLEAR MONITOR
+          </button>
+          <button 
+            onClick={() => setAutoScroll(!autoScroll)}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              backgroundColor: autoScroll ? 'rgba(34, 197, 94, 0.1)' : '#1e293b',
+              color: autoScroll ? '#22c55e' : '#94a3b8',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600'
+            }}
+          >
+            {autoScroll ? <Eye size={16} /> : <EyeOff size={16} />}
+            {autoScroll ? 'AUTO-SCROLL ON' : 'AUTO-SCROLL OFF'}
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
@@ -43,7 +69,7 @@ export default function LiveMonitor() {
             <tr>
               <th style={{ padding: '16px' }}>Time</th>
               <th>Subject</th>
-              <th>Direction</th>
+              <th>Door</th>
               <th>Method</th>
               <th>Decision</th>
             </tr>
@@ -63,12 +89,7 @@ export default function LiveMonitor() {
                     </div>
                   </div>
                 </td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: e.direction === 'IN' ? '#22c55e' : '#ff3b8f' }}>
-                    {e.direction === 'IN' ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
-                    <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{e.direction}</span>
-                  </div>
-                </td>
+                <td style={{ fontSize: '13px', color: '#94a3b8' }}>{e.device_id}</td>
                 <td style={{ fontSize: '13px', color: '#94a3b8' }}>{e.method}</td>
                 <td><StatusBadge type={e.decision} /></td>
               </tr>

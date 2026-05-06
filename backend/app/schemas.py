@@ -1,4 +1,5 @@
 # Canonical event schema for all HIAS controller events
+from typing import List, Optional, Dict
 from datetime import datetime
 import uuid
 from enum import Enum
@@ -32,6 +33,7 @@ class Reason(str, Enum):
     VALID = "VALID"
     UNKNOWN = "UNKNOWN"
     TIME_BLOCK = "TIME_BLOCK"
+    MANUAL = "MANUAL"
 
 
 # --- Inbound Payloads ---
@@ -53,5 +55,16 @@ class ControllerEvent(BaseModel):
     decision: Decision
     reason: Reason
     device_id: str
+    ip_address: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
+
+class UserResponse(BaseModel):
+    user_id: str
+    name: str
+    role: str
+    device_ref_id: int | None = None
+    face_enrolled: bool = False
+
+    class Config:
+        from_attributes = True
