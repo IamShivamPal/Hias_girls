@@ -19,12 +19,19 @@ export default function Dashboard() {
     { name: 'Manual Overrides', value: stats.overrides.toLocaleString(), icon: Fingerprint, color: '#eab308' },
   ];
 
-  // --- Calculate Hourly Chart Data ---
-  const hourlyData = new Array(12).fill(0); // 08:00 to 20:00
+  // --- Calculate Hourly Chart Data (in IST) ---
+  const hourlyData = new Array(12).fill(0); // 08:00 to 20:00 IST
   events.forEach(event => {
-    const hour = new Date(event.timestamp).getHours();
-    if (hour >= 8 && hour < 20) {
-      hourlyData[hour - 8]++;
+    if (!event.timestamp) return;
+    const hasOffset = event.timestamp.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(event.timestamp);
+    const utcStr = hasOffset ? event.timestamp : event.timestamp.replace(' ', 'T') + 'Z';
+    // Extract the hour in IST
+    const hourIST = parseInt(
+      new Date(utcStr).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }),
+      10
+    );
+    if (hourIST >= 8 && hourIST < 20) {
+      hourlyData[hourIST - 8]++;
     }
   });
   const maxEvents = Math.max(...hourlyData, 1);

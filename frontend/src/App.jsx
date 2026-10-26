@@ -19,6 +19,7 @@ import SettingsScreen from './screens/Settings';
 import EnrollmentScreen from './screens/Enrollment';
 import StatusPanel from './components/StatusPanel';
 import { API_ENDPOINTS } from './api/config';
+import { formatTimeIST } from './utils/time';
 
 function DigitalClock({ variant = 'sidebar' }) {
   const [time, setTime] = useState(new Date());
@@ -27,7 +28,7 @@ function DigitalClock({ variant = 'sidebar' }) {
   useEffect(() => {
     const syncTime = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/system/time');
+        const res = await fetch(API_ENDPOINTS.SYSTEM_TIME);
         const data = await res.json();
         const serverTime = new Date(data.iso);
         const localTime = new Date();
@@ -166,7 +167,7 @@ function MainFeed() {
           ) : (
             events.map((e, i) => (
               <tr key={i}>
-                <td style={{ color: '#94a3b8' }}>{new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                <td style={{ color: '#94a3b8' }}>{formatTimeIST(e.timestamp)}</td>
                 <td>
                   <div className="subject-cell">
                     <div className="avatar" />

@@ -13,8 +13,8 @@ except (ImportError, RuntimeError):
 GATE_PIN_MAP = {
     "Entry 1": 17,
     "Entry 2": 18,
-    "Exit 1": 27,
-    "Exit 2": 22
+    "Exit 1": 23,
+    "Exit 2": 24
 }
 TRIGGER_DURATION = 1.5  # Seconds
 

@@ -6,12 +6,14 @@
 const getBaseUrl = () => {
     if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
     const hostname = window.location.hostname;
-    return `http://${hostname}:8000`;
+    return `http://${hostname}:8000`; // was :8026
 };
 
 export const API_BASE_URL = getBaseUrl();
 
 export const API_ENDPOINTS = {
+    SYSTEM_TIME: `${API_BASE_URL}/system/time`,
+    SYSTEM_STATUS: `${API_BASE_URL}/system/status`,
     ACCESS_EVENT: `${API_BASE_URL}/access/event`,
     EVENTS: `${API_BASE_URL}/events`,
     STREAM: `${API_BASE_URL}/events/stream`,

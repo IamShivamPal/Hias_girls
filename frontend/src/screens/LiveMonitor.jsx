@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Activity, ArrowUpRight, ArrowDownRight, User, Eye, EyeOff, Trash2 } from 'lucide-react';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useEvents } from '../context/EventContext';
+import { formatTimeIST } from '../utils/time';
 
 export default function LiveMonitor() {
   const { events, clearLogs } = useEvents();
@@ -77,7 +78,7 @@ export default function LiveMonitor() {
           <tbody>
             {events.map((e, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
-                <td style={{ padding: '16px', color: '#94a3b8', fontSize: '13px' }}>{new Date(e.timestamp).toLocaleTimeString()}</td>
+                <td style={{ padding: '16px', color: '#94a3b8', fontSize: '13px' }}>{formatTimeIST(e.timestamp)}</td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

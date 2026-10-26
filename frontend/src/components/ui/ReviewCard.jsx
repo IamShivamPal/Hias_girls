@@ -1,6 +1,7 @@
 import { Check, X, Search, Clock, Fingerprint } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import ConfidenceBar from './ConfidenceBar';
+import { formatTimeIST } from '../../utils/time';
 
 export default function ReviewCard({ data, onConfirm, onReject, onSearch, active }) {
   return (
@@ -35,7 +36,7 @@ export default function ReviewCard({ data, onConfirm, onReject, onSearch, active
         <div style={{ display: 'flex', gap: '20px', color: '#94a3b8', fontSize: '13px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Clock size={14} />
-            {new Date(data.timestamp).toLocaleTimeString()}
+            {formatTimeIST(data.timestamp)}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Fingerprint size={14} />

@@ -56,7 +56,7 @@ class ControllerEvent(BaseModel):
     reason: Reason
     device_id: str
     ip_address: Optional[str] = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
 class UserResponse(BaseModel):

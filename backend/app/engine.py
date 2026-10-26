@@ -4,14 +4,7 @@ from sqlalchemy.orm import Session
 from .models import User
 from .schemas import Decision, Reason
 
-DEFAULT_USERS = {
-    "S001": "Soham Kotkar",
-    "S002": "Vijay Dhawan",
-    "S003": "Chandragupta Maurya",
-    "S004": "Usman Sheikh",
-    "S005": "Manya Sharma",
-    "S100": "Admin Test",
-}
+DEFAULT_USERS = {}
 
 def seed_db(db: Session):
     """Seed the database with initial users if it's empty."""

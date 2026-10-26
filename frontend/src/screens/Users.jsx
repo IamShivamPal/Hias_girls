@@ -9,6 +9,8 @@ export default function Users({ initialSearch = '' }) {
   const [newUser, setNewUser] = useState({ user_id: '', name: '' });
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const fetchUsers = async (query = '') => {
     setLoading(true);
@@ -52,6 +54,7 @@ export default function Users({ initialSearch = '' }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       const res = await fetch(API_ENDPOINTS.USERS, {
         method: 'POST',
@@ -68,11 +71,14 @@ export default function Users({ initialSearch = '' }) {
       }
     } catch (err) {
       alert("Failed to enroll user");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (user_id, name) => {
     if (!window.confirm(`Are you sure you want to delete "${name}" (${user_id})? This will also remove them from the COSEC device.`)) return;
+    setDeletingId(user_id);
     try {
       const res = await fetch(`${API_ENDPOINTS.USERS}/${user_id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -83,6 +89,8 @@ export default function Users({ initialSearch = '' }) {
       }
     } catch (err) {
       alert('Failed to delete user');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -115,7 +123,7 @@ export default function Users({ initialSearch = '' }) {
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button type="button" onClick={() => setShowModal(false)} style={{ flex: 1, backgroundColor: '#1e293b', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', cursor: 'pointer' }}>CANCEL</button>
-                <button type="submit" style={{ flex: 1, backgroundColor: '#ff3b8f', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>ENROLL</button>
+                <button type="submit" disabled={isSubmitting} style={{ flex: 1, backgroundColor: isSubmitting ? '#7a1a45' : '#ff3b8f', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: 'bold', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>{isSubmitting ? 'ENROLLING...' : 'ENROLL'}</button>
               </div>
             </form>
           </div>
@@ -241,11 +249,12 @@ export default function Users({ initialSearch = '' }) {
                     <button
                       onClick={() => handleDelete(user.user_id, user.name)}
                       title="Delete user"
-                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '6px', borderRadius: '6px', transition: 'color 0.2s' }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+                      disabled={deletingId === user.user_id}
+                      style={{ background: 'none', border: 'none', color: deletingId === user.user_id ? '#334155' : '#64748b', cursor: deletingId === user.user_id ? 'not-allowed' : 'pointer', padding: '6px', borderRadius: '6px', transition: 'color 0.2s' }}
+                      onMouseEnter={e => e.currentTarget.style.color = deletingId === user.user_id ? '#334155' : '#ef4444'}
+                      onMouseLeave={e => e.currentTarget.style.color = deletingId === user.user_id ? '#334155' : '#64748b'}
                     >
-                      <Trash2 size={16} />
+                      {deletingId === user.user_id ? <RefreshCw size={16} className="animate-spin" /> : <Trash2 size={16} />}
                     </button>
                   </td>
                 </tr>

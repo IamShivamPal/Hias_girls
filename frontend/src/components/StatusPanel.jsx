@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, Wifi, Database, Activity, ShieldCheck, Zap } from 'lucide-react';
+import { API_ENDPOINTS } from '../api/config';
 
 export default function StatusPanel({ connected }) {
   const [data, setData] = useState({
@@ -14,7 +15,7 @@ export default function StatusPanel({ connected }) {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const res = await fetch('http://127.0.0.1:8000/system/status');
+        const res = await fetch(API_ENDPOINTS.SYSTEM_STATUS);
         const json = await res.json();
         setData(json);
       } catch (err) {

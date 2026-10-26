@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Bell, ShieldAlert, Cpu, Settings, Clock, Trash2 } from 'lucide-react';
 import { API_ENDPOINTS } from '../api/config';
+import { formatTimeIST } from '../utils/time';
 
 export default function Alerts() {
   const [alerts, setAlerts] = useState([]);
@@ -95,7 +96,7 @@ export default function Alerts() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
                     <span style={{ fontSize: '10px', fontWeight: 'bold', color: color, letterSpacing: '1px' }}>{alert.type.toUpperCase()}</span>
                     <span style={{ fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Clock size={12} /> {new Date(alert.timestamp).toLocaleTimeString()}
+                      <Clock size={12} /> {formatTimeIST(alert.timestamp)}
                     </span>
                   </div>
                   <div style={{ fontSize: '15px', fontWeight: '500' }}>{alert.message}</div>

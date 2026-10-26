@@ -1,4 +1,5 @@
 import { ArrowUpRight, ArrowDownRight, User } from 'lucide-react';
+import { formatTimeIST } from '../utils/time';
 
 export default function LiveFeed({ events }) {
   return (
@@ -35,7 +36,7 @@ export default function LiveFeed({ events }) {
             ) : (
               events.map((e, i) => (
                 <tr key={i}>
-                  <td style={{ color: '#94a3b8' }}>{new Date(e.timestamp || Date.now()).toLocaleTimeString()}</td>
+                  <td style={{ color: '#94a3b8' }}>{formatTimeIST(e.timestamp)}</td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
